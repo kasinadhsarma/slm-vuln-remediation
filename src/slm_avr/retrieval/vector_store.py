@@ -4,9 +4,10 @@ RAVEN-style agentic RAG queries an expansive vector database of historical
 vulnerability-fix pairs. This is a locally deployable approximation of that
 component: it indexes a curated JSON corpus of CWE fix exemplars with TF-IDF
 and cosine similarity (no network calls, no GPU, no external vector DB
-service required). Retrieval is CWE-aware: exemplars matching the finding's
-CWE category are always preferred over generic textual similarity, mirroring
-how real vulnerabilities map onto established CWE patterns rather than being
+service required -- see tfidf.py for the dependency-free implementation).
+Retrieval is CWE-aware: exemplars matching the finding's CWE category are
+always preferred over generic textual similarity, mirroring how real
+vulnerabilities map onto established CWE patterns rather than being
 entirely novel.
 """
 
@@ -15,19 +16,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
 from slm_avr.models import FixExemplar
+from slm_avr.retrieval.tfidf import TfidfCorpus
 
 
 class SemanticRetriever:
     def __init__(self, exemplars_path: str):
         self.exemplars_path = exemplars_path
         self._exemplars: list[FixExemplar] = self._load(exemplars_path)
-        self._vectorizer = TfidfVectorizer(stop_words="english")
         corpus = [self._doc_text(e) for e in self._exemplars]
-        self._matrix = self._vectorizer.fit_transform(corpus) if corpus else None
+        self._corpus = TfidfCorpus(corpus)
 
     @staticmethod
     def _load(path: str) -> list[FixExemplar]:
@@ -50,12 +48,11 @@ class SemanticRetriever:
     def retrieve(
         self, cwe_id: str, query_code: str, query_message: str = "", top_k: int = 3
     ) -> list[FixExemplar]:
-        if not self._exemplars or self._matrix is None:
+        if not self._exemplars:
             return []
 
         query = f"{query_message}\n{query_code}"
-        query_vec = self._vectorizer.transform([query])
-        sims = cosine_similarity(query_vec, self._matrix)[0]
+        sims = self._corpus.similarities(query)
 
         scored = list(zip(self._exemplars, sims))
 

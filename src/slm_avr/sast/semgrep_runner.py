@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from slm_avr.models import Finding
@@ -29,7 +30,21 @@ class SemgrepRunner:
         return self.scan_paths([file_path])
 
     def scan_paths(self, paths: list[str]) -> list[Finding]:
-        cmd = ["semgrep", "--json", "--quiet", "--no-git-ignore", "--metrics=off"]
+        # Invoke semgrep's entrypoint module directly with the current
+        # interpreter rather than relying on a `semgrep` console-script on
+        # $PATH. Some deployment runtimes (e.g. Vercel's Python functions)
+        # install the semgrep *package* without generating that script.
+        # (`python -m semgrep` itself is deliberately blocked by semgrep as
+        # deprecated -- this invokes the same function one module deeper.)
+        cmd = [
+            sys.executable,
+            "-m",
+            "semgrep.console_scripts.entrypoint",
+            "--json",
+            "--quiet",
+            "--no-git-ignore",
+            "--metrics=off",
+        ]
         for cfg in self.config_paths:
             cmd += ["--config", cfg]
         cmd += paths
@@ -43,7 +58,8 @@ class SemgrepRunner:
             )
         except FileNotFoundError as e:
             raise SemgrepError(
-                "semgrep executable not found. Install it with `pip install semgrep`."
+                "semgrep is not installed in this Python environment. "
+                "Install it with `pip install semgrep`."
             ) from e
         except subprocess.TimeoutExpired as e:
             raise SemgrepError(f"semgrep scan timed out for {paths}") from e
