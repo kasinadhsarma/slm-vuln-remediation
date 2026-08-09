@@ -9,6 +9,7 @@ resolves it ("compiler-in-the-loop" verification).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -49,12 +50,28 @@ class SemgrepRunner:
             cmd += ["--config", cfg]
         cmd += paths
 
+        # A spawned subprocess with the same interpreter does NOT inherit
+        # this process's sys.path -- it only matters when the parent
+        # process's module search path was extended at runtime rather than
+        # via a normal site-packages install (e.g. Vercel's Python runtime
+        # injects its dependency directory into sys.path via an import
+        # hook, not PYTHONPATH). Passing it through explicitly makes the
+        # child interpreter able to find the same `semgrep` package.
+        env = os.environ.copy()
+        extra_path = os.pathsep.join(p for p in sys.path if p)
+        env["PYTHONPATH"] = (
+            extra_path
+            if not env.get("PYTHONPATH")
+            else extra_path + os.pathsep + env["PYTHONPATH"]
+        )
+
         try:
             proc = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=120,
+                env=env,
             )
         except FileNotFoundError as e:
             raise SemgrepError(
