@@ -27,6 +27,7 @@ from slm_avr.config import Config
 from slm_avr.llm.base import LLMProvider
 from slm_avr.llm.mock_provider import MockProvider
 from slm_avr.llm.ollama_provider import OllamaProvider
+from slm_avr.llm.openai_compatible_provider import OpenAICompatibleProvider
 from slm_avr.models import (
     FileRemediationReport,
     Finding,
@@ -77,6 +78,14 @@ class Orchestrator:
     def _build_llm(config: Config) -> LLMProvider:
         if config.llm_provider == "mock":
             return MockProvider()
+        if config.llm_provider == "openai_compatible":
+            return OpenAICompatibleProvider(
+                base_url=config.openai_compatible.base_url,
+                api_key=config.openai_compatible.api_key,
+                model=config.openai_compatible.model,
+                temperature=config.openai_compatible.temperature,
+                timeout=config.openai_compatible.timeout,
+            )
         return OllamaProvider(
             host=config.ollama.host,
             model=config.ollama.model,

@@ -29,7 +29,7 @@ class SemgrepRunner:
         return self.scan_paths([file_path])
 
     def scan_paths(self, paths: list[str]) -> list[Finding]:
-        cmd = ["semgrep", "--json", "--quiet", "--no-git-ignore"]
+        cmd = ["semgrep", "--json", "--quiet", "--no-git-ignore", "--metrics=off"]
         for cfg in self.config_paths:
             cmd += ["--config", cfg]
         cmd += paths

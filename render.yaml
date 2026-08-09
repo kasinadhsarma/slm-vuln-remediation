@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: slm-avr-api
+    runtime: python
+    plan: starter
+    buildCommand: pip install --upgrade pip && pip install -e .
+    startCommand: uvicorn slm_avr.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: SLM_AVR_LLM_PROVIDER
+        value: openai_compatible
+      - key: OPENAI_COMPATIBLE_BASE_URL
+        value: https://api.together.xyz/v1
+      - key: OPENAI_COMPATIBLE_MODEL
+        value: Qwen/Qwen2.5-Coder-32B-Instruct
+      - key: OPENAI_COMPATIBLE_API_KEY
+        sync: false # set manually in the Render dashboard -- never commit a real key
+      - key: ALLOWED_ORIGINS
+        value: "*" # tighten to your Vercel domain once deployed, e.g. https://your-app.vercel.app
+      - key: PYTHON_VERSION
+        value: "3.11"

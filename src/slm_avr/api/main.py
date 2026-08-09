@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import queue
 import tempfile
 import threading
@@ -30,10 +31,19 @@ from slm_avr.orchestrator import Orchestrator
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 BENCHMARK_DIR = PROJECT_ROOT / "benchmark"
 
+# Comma-separated list of allowed origins, e.g. "https://myapp.vercel.app".
+# Defaults to "*" for local development; set this explicitly in production.
+_allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "*")
+_allowed_origins = (
+    ["*"]
+    if _allowed_origins_env.strip() == "*"
+    else [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
+)
+
 app = FastAPI(title="slm-avr API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -67,10 +77,15 @@ def _finding_to_dict(f: Finding) -> dict:
 
 @app.get("/api/health")
 def health() -> dict:
+    model = (
+        _base_config.openai_compatible.model
+        if _base_config.llm_provider == "openai_compatible"
+        else _base_config.ollama.model
+    )
     return {
         "status": "ok",
         "llm_provider": _base_config.llm_provider,
-        "model": _base_config.ollama.model,
+        "model": model,
     }
 
 

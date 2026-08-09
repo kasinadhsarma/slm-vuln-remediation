@@ -8,7 +8,18 @@ exemplars_path: src/slm_avr/retrieval/exemplars/cwe_fixes.json
 max_iterations: 3
 top_k_exemplars: 3
 
-llm_provider: ollama   # ollama | mock
+# ollama: fully on-premise/free, requires a local Ollama daemon with the model
+#   pulled -- matches the paper's zero-API-cost, data-sovereign thesis.
+# openai_compatible: any hosted inference API speaking the OpenAI chat-
+#   completions format (Together.ai, Fireworks.ai, Groq, OpenRouter, a
+#   self-hosted vLLM server...) -- no local model, deployable to any regular
+#   host, the practical choice when you don't want to run/host the model yourself.
+# mock: deterministic canned responses, used by the test suite.
+#
+# All fields below can be overridden by environment variables of the same
+# name in SCREAMING_SNAKE_CASE (see README's Deployment section) -- set
+# those on your hosting platform instead of editing this file per-environment.
+llm_provider: ollama   # ollama | openai_compatible | mock
 
 ollama:
   host: http://localhost:11434
@@ -19,3 +30,11 @@ ollama:
   model: qwen2.5-coder:3b
   temperature: 0.2
   timeout: 180
+
+openai_compatible:
+  base_url: https://api.together.xyz/v1
+  # Never commit a real key here -- set OPENAI_COMPATIBLE_API_KEY instead.
+  api_key: ""
+  model: Qwen/Qwen2.5-Coder-32B-Instruct
+  temperature: 0.2
+  timeout: 120
