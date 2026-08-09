@@ -10,3 +10,8 @@ dist/
 eval_report.json
 eval_report.md
 .env
+
+# frontend
+web/node_modules/
+web/.next/
+web/next-env.d.ts

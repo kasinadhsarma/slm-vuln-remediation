@@ -109,6 +109,40 @@ slm-avr benchmark
 `remediate` without `--apply` is a dry run: it shows what would change and
 the verdict for each finding without writing anything.
 
+## Web UI
+
+A small FastAPI backend + Next.js frontend let you paste code in a browser,
+scan it, and watch the multi-agent remediation loop run live (slicing,
+retrieval, curator, generation, review -- one line per pipeline event,
+streamed as newline-delimited JSON).
+
+```bash
+# Terminal 1 -- API backend (wraps the same Orchestrator the CLI uses)
+source .venv/bin/activate
+uvicorn slm_avr.api.main:app --reload --port 8000
+
+# Terminal 2 -- frontend
+cd web
+npm install   # first time only
+npm run dev
+```
+
+Open http://localhost:3000. The "Load an example..." dropdown pulls the six
+seeded benchmark cases straight from `/api/examples`, so you can try a
+full run without writing any code.
+
+Backend API surface:
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/health` | GET | provider/model status |
+| `/api/examples` | GET | the six seeded benchmark snippets |
+| `/api/scan` | POST | `{code, filename}` -> SAST findings, no remediation |
+| `/api/remediate` | POST | `{code, filename, max_iterations?}` -> NDJSON stream of pipeline events, ending with a `complete` event carrying the final patched source |
+
+The frontend reads `NEXT_PUBLIC_API_BASE_URL` (defaults to
+`http://localhost:8000`) if the backend runs elsewhere.
+
 ## Benchmark
 
 [`benchmark/`](benchmark/) contains six seeded, self-contained
@@ -170,7 +204,9 @@ src/slm_avr/
   orchestrator.py                wires it all into the iterative loop
   eval/harness.py                L-AVRBench-style evaluation harness
   cli.py                         slm-avr command-line interface
+  api/main.py                    FastAPI backend (scan / remediate / examples)
 benchmark/                       seeded vulnerability + test cases
+web/                             Next.js frontend (App Router + TypeScript + Tailwind)
 ```
 
 ## Reference

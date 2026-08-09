@@ -11,7 +11,14 @@ from __future__ import annotations
 
 import ast
 import builtins
+from collections.abc import Callable
 from pathlib import Path
+
+ProgressCallback = Callable[[dict], None]
+
+
+def _noop(_event: dict) -> None:
+    pass
 
 from slm_avr.agents.curator import CuratorAgent
 from slm_avr.agents.generator import PatchGenerator
@@ -81,7 +88,11 @@ class Orchestrator:
         return self.sast.scan_file(file_path)
 
     def remediate_file(
-        self, file_path: str, repo_root: str | None = None, test_dir: str | None = None
+        self,
+        file_path: str,
+        repo_root: str | None = None,
+        test_dir: str | None = None,
+        on_event: ProgressCallback = _noop,
     ) -> FileRemediationReport:
         """Remediate every finding in a file, applying fixes cumulatively:
         once a finding is resolved, later findings are sliced and generated
@@ -92,16 +103,41 @@ class Orchestrator:
         baseline_findings = self.sast.scan_file(file_path)
         curator = CuratorAgent(repo_root or str(Path(file_path).resolve().parent))
 
+        on_event(
+            {
+                "type": "scan_complete",
+                "findings_total": len(baseline_findings),
+                "findings": [
+                    {
+                        "cwe_id": f.cwe_id,
+                        "rule_id": f.rule_id,
+                        "line": f.start_line,
+                        "message": f.message,
+                        "severity": f.severity,
+                        "snippet": f.lines,
+                    }
+                    for f in baseline_findings
+                ],
+            }
+        )
+
         current_source = original_source
         results: list[RemediationResult] = []
 
-        for finding in baseline_findings:
+        for index, finding in enumerate(baseline_findings, start=1):
             current_findings = self.sast.rescan_source(current_source, file_path)
             match = next(
                 (f for f in current_findings if f.rule_id == finding.rule_id), None
             )
             if match is None:
                 # Already resolved as a side effect of an earlier fix in this run.
+                on_event(
+                    {
+                        "type": "finding_skipped_already_fixed",
+                        "cwe_id": finding.cwe_id,
+                        "rule_id": finding.rule_id,
+                    }
+                )
                 results.append(
                     RemediationResult(
                         finding=finding,
@@ -114,12 +150,31 @@ class Orchestrator:
                 )
                 continue
 
+            on_event(
+                {
+                    "type": "finding_start",
+                    "index": index,
+                    "total": len(baseline_findings),
+                    "cwe_id": match.cwe_id,
+                    "rule_id": match.rule_id,
+                    "line": match.start_line,
+                }
+            )
             result = self.remediate_finding(
-                match, current_source, current_findings, curator, test_dir
+                match, current_source, current_findings, curator, test_dir, on_event
             )
             results.append(result)
             if result.success and result.final_patched_source:
                 current_source = result.final_patched_source
+
+        on_event(
+            {
+                "type": "file_done",
+                "fixed_count": sum(1 for r in results if r.success),
+                "total_count": len(results),
+                "final_source": current_source,
+            }
+        )
 
         return FileRemediationReport(
             file_path=file_path,
@@ -135,24 +190,68 @@ class Orchestrator:
         baseline_findings: list[Finding],
         curator: CuratorAgent,
         test_dir: str | None = None,
+        on_event: ProgressCallback = _noop,
     ) -> RemediationResult:
         code_slice = self.slicer.slice(source, finding.path, finding.start_line)
+        on_event(
+            {
+                "type": "slicing_complete",
+                "cwe_id": finding.cwe_id,
+                "enclosing_name": code_slice.enclosing_name,
+                "included_lines": len(code_slice.included_lines),
+            }
+        )
+
         exemplars = self.retriever.retrieve(
             finding.cwe_id,
             finding.lines,
             finding.message,
             top_k=self.config.top_k_exemplars,
         )
+        on_event(
+            {
+                "type": "retrieval_complete",
+                "cwe_id": finding.cwe_id,
+                "exemplars": [{"title": e.title, "score": e.score} for e in exemplars],
+            }
+        )
+
         referenced = _free_names(code_slice.full_function_source)
         cross_ctx = curator.gather(finding.path, code_slice.enclosing_name, referenced)
+        on_event(
+            {
+                "type": "curator_complete",
+                "cwe_id": finding.cwe_id,
+                "callers": len(cross_ctx.callers),
+                "related_definitions": len(cross_ctx.related_definitions),
+                "callees": len(cross_ctx.callees),
+            }
+        )
 
         attempts: list[PatchAttempt] = []
         feedback: str | None = None
 
         for iteration in range(1, self.config.max_iterations + 1):
+            on_event(
+                {
+                    "type": "generation_start",
+                    "cwe_id": finding.cwe_id,
+                    "iteration": iteration,
+                    "max_iterations": self.config.max_iterations,
+                }
+            )
             candidate = self.generator.generate(
                 finding, code_slice, exemplars, cross_ctx, reviewer_feedback=feedback
             )
+            on_event(
+                {
+                    "type": "generation_complete",
+                    "cwe_id": finding.cwe_id,
+                    "iteration": iteration,
+                    "candidate": candidate,
+                }
+            )
+
             review = self.reviewer.review(
                 finding, baseline_findings, source, code_slice, candidate, test_dir=test_dir
             )
@@ -169,7 +268,26 @@ class Orchestrator:
             )
             attempts.append(attempt)
 
+            on_event(
+                {
+                    "type": "review_result",
+                    "cwe_id": finding.cwe_id,
+                    "iteration": iteration,
+                    "verdict": review.verdict.value,
+                    "feedback": review.feedback,
+                }
+            )
+
             if review.verdict == Verdict.FIXED:
+                on_event(
+                    {
+                        "type": "finding_resolved",
+                        "cwe_id": finding.cwe_id,
+                        "rule_id": finding.rule_id,
+                        "verdict": Verdict.FIXED.value,
+                        "iterations_used": iteration,
+                    }
+                )
                 return RemediationResult(
                     finding=finding,
                     verdict=Verdict.FIXED,
@@ -181,6 +299,15 @@ class Orchestrator:
 
             feedback = review.feedback
 
+        on_event(
+            {
+                "type": "finding_resolved",
+                "cwe_id": finding.cwe_id,
+                "rule_id": finding.rule_id,
+                "verdict": Verdict.MAX_ITERATIONS_EXCEEDED.value,
+                "iterations_used": self.config.max_iterations,
+            }
+        )
         return RemediationResult(
             finding=finding,
             verdict=Verdict.MAX_ITERATIONS_EXCEEDED,
