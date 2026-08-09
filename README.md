@@ -143,6 +143,79 @@ Backend API surface:
 The frontend reads `NEXT_PUBLIC_API_BASE_URL` (defaults to
 `http://localhost:8000`) if the backend runs elsewhere.
 
+## Deployment
+
+The frontend and backend deploy to **different kinds of platforms** -- this
+is not a Vercel-only app.
+
+- **Frontend (Next.js) -> Vercel.** This is exactly what Vercel is built for.
+- **Backend (FastAPI + Semgrep) -> a regular always-on host, not Vercel
+  serverless functions.** Semgrep alone installs to ~260MB, which exceeds
+  Vercel's serverless function size limits (50MB Hobby / 250MB Pro,
+  unzipped), and the remediation loop's shape (a background thread streaming
+  progress over a long-lived connection) doesn't fit a stateless,
+  short-lived function model well either. Render, Railway, Fly.io, or any
+  plain VPS all work fine since Semgrep just runs as a normal subprocess
+  there, same as it does locally.
+- **The LLM itself -> a hosted OpenAI-compatible inference API**, not a
+  self-hosted Ollama. This avoids needing a server with the model loaded in
+  memory at all; the backend just makes an HTTPS call. This is the
+  `openai_compatible` provider ([`llm/openai_compatible_provider.py`](src/slm_avr/llm/openai_compatible_provider.py))
+  -- it works with **any** provider that speaks the OpenAI chat-completions
+  format: [Together.ai](https://together.ai) (hosts
+  `Qwen/Qwen2.5-Coder-32B-Instruct`, the exact flagship model from the
+  report), Fireworks.ai, Groq, OpenRouter, or a self-hosted vLLM server.
+  Running Ollama yourself (a VPS with the model pulled) remains a valid,
+  fully free/on-premise alternative -- see [Setup](#setup) -- this section
+  covers the zero-self-hosting path.
+
+### 1. Backend on Render
+
+[`render.yaml`](render.yaml) is a ready-to-use Render Blueprint. In the
+Render dashboard: **New -> Blueprint**, point it at this repo, and it will
+provision a web service with the right build/start commands. Then set the
+one secret it doesn't fill in for you:
+
+```bash
+OPENAI_COMPATIBLE_API_KEY=<your Together.ai / Fireworks / Groq / ... key>
+```
+
+Or configure manually as a Render Web Service:
+
+```
+Build command:  pip install --upgrade pip && pip install -e .
+Start command:  uvicorn slm_avr.api.main:app --host 0.0.0.0 --port $PORT
+Health check:   /api/health
+```
+
+Environment variables:
+
+| Variable | Value |
+|---|---|
+| `SLM_AVR_LLM_PROVIDER` | `openai_compatible` |
+| `OPENAI_COMPATIBLE_BASE_URL` | e.g. `https://api.together.xyz/v1` |
+| `OPENAI_COMPATIBLE_MODEL` | e.g. `Qwen/Qwen2.5-Coder-32B-Instruct` |
+| `OPENAI_COMPATIBLE_API_KEY` | your provider API key (secret) |
+| `ALLOWED_ORIGINS` | your Vercel domain once known, e.g. `https://your-app.vercel.app` (defaults to `*`) |
+
+Every `Config` field can be set this way -- see [`config.py`](src/slm_avr/config.py)
+for the full env var list -- so the same code runs locally against Ollama
+and in production against a hosted API with no code changes, just
+different environment variables.
+
+### 2. Frontend on Vercel
+
+Import the repo in Vercel, set the **root directory to `web/`**, and add one
+environment variable:
+
+```
+NEXT_PUBLIC_API_BASE_URL=https://<your-render-service>.onrender.com
+```
+
+Vercel auto-detects Next.js; no other configuration is needed. Once both
+are live, go back to Render and tighten `ALLOWED_ORIGINS` to your actual
+Vercel URL instead of `*`.
+
 ## Benchmark
 
 [`benchmark/`](benchmark/) contains six seeded, self-contained
@@ -200,13 +273,14 @@ src/slm_avr/
   agents/curator.py              cross-file dependency scanner
   agents/generator.py            Patch Generator (prompt building)
   agents/reviewer.py             Patch Reviewer (verification)
-  llm/                           LLM provider abstraction (Ollama / mock)
+  llm/                           LLM provider abstraction (Ollama / OpenAI-compatible / mock)
   orchestrator.py                wires it all into the iterative loop
   eval/harness.py                L-AVRBench-style evaluation harness
   cli.py                         slm-avr command-line interface
   api/main.py                    FastAPI backend (scan / remediate / examples)
 benchmark/                       seeded vulnerability + test cases
 web/                             Next.js frontend (App Router + TypeScript + Tailwind)
+render.yaml                      Render Blueprint for the backend
 ```
 
 ## Reference
