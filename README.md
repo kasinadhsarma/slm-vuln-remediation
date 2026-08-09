@@ -150,13 +150,27 @@ is not a Vercel-only app.
 
 - **Frontend (Next.js) -> Vercel.** This is exactly what Vercel is built for.
 - **Backend (FastAPI + Semgrep) -> a regular always-on host, not Vercel
-  serverless functions.** Semgrep alone installs to ~260MB, which exceeds
-  Vercel's serverless function size limits (50MB Hobby / 250MB Pro,
-  unzipped), and the remediation loop's shape (a background thread streaming
-  progress over a long-lived connection) doesn't fit a stateless,
-  short-lived function model well either. Render, Railway, Fly.io, or any
-  plain VPS all work fine since Semgrep just runs as a normal subprocess
-  there, same as it does locally.
+  serverless functions.** This was tested directly, not just estimated:
+    1. The full dependency set (originally including scikit-learn/scipy/numpy
+       for the retrieval layer) bundled to **529MB**, over Vercel's 500MB
+       function size cap. Removing scikit-learn in favor of a dependency-free
+       TF-IDF implementation ([`retrieval/tfidf.py`](src/slm_avr/retrieval/tfidf.py))
+       brought that down to **318MB** -- so the size limit alone is
+       solvable.
+    2. The real blocker is deeper: Semgrep's scanner is a compiled OCaml
+       binary that internally does `execvp("pysemgrep", ...)` -- a hardcoded
+       PATH lookup for a *second* console-script executable. Vercel's Python
+       runtime installs dependencies into `/tmp/_vc_deps` via `uv` at
+       request time and only populates `site-packages`; it doesn't generate
+       the `bin/`-style console-script executables Semgrep's own binary
+       expects to find on `$PATH`. This surfaces as
+       `Unix_error: No such file or directory execvp pysemgrep` at runtime,
+       and it isn't fixable from application code -- it's an assumption
+       baked into Semgrep's compiled core about how it gets installed.
+  Render, Railway, Fly.io, or any plain VPS all work fine here since Semgrep
+  just runs as a normal subprocess in a normal Python environment, same as
+  it does locally -- this constraint is specific to Vercel's Python
+  function runtime, not to serverless/PaaS platforms in general.
 - **The LLM itself -> a hosted OpenAI-compatible inference API**, not a
   self-hosted Ollama. This avoids needing a server with the model loaded in
   memory at all; the backend just makes an HTTPS call. This is the
@@ -183,10 +197,15 @@ OPENAI_COMPATIBLE_API_KEY=<your Together.ai / Fireworks / Groq / ... key>
 Or configure manually as a Render Web Service:
 
 ```
-Build command:  pip install --upgrade pip && pip install -e .
+Build command:  pip install --upgrade pip && pip install -e ".[serve]"
 Start command:  uvicorn slm_avr.api.main:app --host 0.0.0.0 --port $PORT
 Health check:   /api/health
 ```
+
+(The `[serve]` extra pulls in `uvicorn[standard]`, which is deliberately
+*not* a core dependency -- see [`pyproject.toml`](pyproject.toml) -- so a
+bare `pip install -e .` stays minimal for environments that provide their
+own ASGI server.)
 
 Environment variables:
 
