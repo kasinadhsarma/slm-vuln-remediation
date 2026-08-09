@@ -1,0 +1,6 @@
+{
+  "name": "cwe-78-command-injection",
+  "cwe_id": "CWE-78",
+  "target_file": "app.py",
+  "description": "OS command injection via os.system() with an unsanitized f-string"
+}

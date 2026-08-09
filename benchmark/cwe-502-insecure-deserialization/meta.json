@@ -1,0 +1,6 @@
+{
+  "name": "cwe-502-insecure-deserialization",
+  "cwe_id": "CWE-502",
+  "target_file": "app.py",
+  "description": "Insecure deserialization of untrusted data via pickle.loads"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "cwe-22-path-traversal",
+  "cwe_id": "CWE-22",
+  "target_file": "app.py",
+  "description": "Path traversal via unsanitized filename joined into a filesystem read"
+}

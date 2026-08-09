@@ -1,0 +1,6 @@
+{
+  "name": "cwe-89-sql-injection",
+  "cwe_id": "CWE-89",
+  "target_file": "app.py",
+  "description": "SQL injection via f-string interpolation into cursor.execute()"
+}

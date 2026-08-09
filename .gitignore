@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.semgrep/
+.slm_avr_workdir/
+eval_report.json
+eval_report.md
+.env

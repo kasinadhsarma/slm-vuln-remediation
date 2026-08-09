@@ -1,0 +1,154 @@
+rules:
+  - id: python-sql-injection-taint
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Untrusted input reaches a SQL execution sink without a parameterized
+      query, allowing SQL Injection (CWE-89). Trace the tainted value back
+      to its source (a function parameter or external input) and use a
+      parameterized query (a placeholder + separate params argument) instead
+      of string interpolation.
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"]
+      category: security
+      confidence: HIGH
+      references:
+        - https://owasp.org/www-community/attacks/SQL_Injection
+    pattern-sources:
+      - pattern-either:
+          - pattern: $PARAM
+          - pattern: input(...)
+          - pattern: sys.argv[...]
+          - pattern: os.environ.get(...)
+          - pattern: request.args.get(...)
+          - pattern: request.form.get(...)
+          - pattern: request.json[...]
+    pattern-sinks:
+      - pattern: $CURSOR.execute($QUERY)
+      - pattern: $CURSOR.executemany($QUERY, ...)
+    pattern-sanitizers:
+      - pattern: $CURSOR.execute($QUERY, $PARAMS)
+
+  - id: python-os-command-injection-taint
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Untrusted input reaches a shell command execution sink (os.system,
+      os.popen, or subprocess with shell=True), allowing OS Command
+      Injection (CWE-78). Avoid shell=True with untrusted input; pass the
+      command as an argument list instead, and/or validate the input
+      against an allowlist.
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"]
+      category: security
+      confidence: HIGH
+      references:
+        - https://owasp.org/www-community/attacks/Command_Injection
+    pattern-sources:
+      - pattern-either:
+          - pattern: $PARAM
+          - pattern: input(...)
+          - pattern: sys.argv[...]
+          - pattern: request.args.get(...)
+          - pattern: request.form.get(...)
+    pattern-sinks:
+      - pattern: os.system($CMD)
+      - pattern: os.popen($CMD)
+      - pattern: subprocess.run($CMD, ..., shell=True, ...)
+      - pattern: subprocess.call($CMD, ..., shell=True, ...)
+      - pattern: subprocess.Popen($CMD, ..., shell=True, ...)
+
+  - id: python-path-traversal
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A file path is constructed by concatenating or joining unsanitized
+      user input and passed directly to a filesystem operation, allowing
+      Path Traversal (CWE-22) to read or write files outside the intended
+      directory.
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"]
+      category: security
+      confidence: MEDIUM
+      references:
+        - https://owasp.org/www-community/attacks/Path_Traversal
+    patterns:
+      - pattern-either:
+          - pattern: open($BASE + $VAR, ...)
+          - pattern: open(os.path.join($BASE, $VAR), ...)
+          - pattern: open(f"...{$VAR}...", ...)
+      # Exclude the common validated-path idioms so a correctly-fixed
+      # function isn't flagged forever: (1) the tainted component sanitized
+      # inline via os.path.basename() before the join, (2) the join result
+      # resolved with os.path.realpath() and confinement-checked before use.
+      - pattern-not: open(os.path.join($BASE, os.path.basename(...)), ...)
+      - pattern-not-inside: |
+          $TARGET = os.path.realpath(...)
+          ...
+          open($TARGET, ...)
+      - pattern-not-inside: |
+          $SAFE = os.path.basename(...)
+          ...
+          open(os.path.join($BASE2, $SAFE), ...)
+
+  - id: python-hardcoded-credentials
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A password, secret, or API key appears to be hardcoded as a string
+      literal in source code (CWE-798). Hardcoded credentials are easily
+      discovered by anyone with source access and cannot be rotated without
+      a code change. Load the value from an environment variable or a
+      secrets manager instead.
+    metadata:
+      cwe: ["CWE-798: Use of Hard-coded Credentials"]
+      category: security
+      confidence: MEDIUM
+      references:
+        - https://owasp.org/www-community/vulnerabilities/Use_of_hard-coded_password
+    patterns:
+      - pattern: $VAR = "..."
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i)^(password|passwd|pwd|secret|api_key|apikey|token|access_key)$
+
+  - id: python-weak-hash-for-password
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A cryptographically weak hash function (MD5 or SHA1) is used, which is
+      unsuitable for password storage or integrity-critical hashing due to
+      collision and brute-force weaknesses (CWE-327). Use a dedicated
+      password hashing function (e.g. bcrypt, scrypt, or hashlib's
+      pbkdf2_hmac / Argon2) instead.
+    metadata:
+      cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"]
+      category: security
+      confidence: HIGH
+      references:
+        - https://owasp.org/www-community/vulnerabilities/Insecure_Cryptographic_Storage
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+
+  - id: python-insecure-deserialization
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Untrusted data is deserialized using pickle, which can execute
+      arbitrary code during unpickling, allowing Insecure Deserialization
+      (CWE-502). Use a safe serialization format (e.g. json) for untrusted
+      data, or cryptographically sign/verify the payload before unpickling.
+    metadata:
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      category: security
+      confidence: HIGH
+      references:
+        - https://owasp.org/www-community/vulnerabilities/Deserialization_of_untrusted_data
+    patterns:
+      - pattern-either:
+          - pattern: pickle.loads(...)
+          - pattern: pickle.load(...)

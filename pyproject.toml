@@ -1,0 +1,28 @@
+[project]
+name = "slm-avr"
+version = "0.1.0"
+description = "Retrieval-Augmented Autonomous Code Vulnerability Remediation using Static Analysis-Guided Small Language Models"
+requires-python = ">=3.10"
+dependencies = [
+    "semgrep>=1.78.0",
+    "requests>=2.31.0",
+    "scikit-learn>=1.4.0",
+    "rich>=13.7.0",
+    "pyyaml>=6.0.1",
+    "pyflakes>=3.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+slm-avr = "slm_avr.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

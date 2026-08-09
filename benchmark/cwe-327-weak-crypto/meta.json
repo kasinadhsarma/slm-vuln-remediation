@@ -1,0 +1,6 @@
+{
+  "name": "cwe-327-weak-crypto",
+  "cwe_id": "CWE-327",
+  "target_file": "app.py",
+  "description": "Password hashing using cryptographically broken MD5"
+}

@@ -1,0 +1,21 @@
+# slm-avr pipeline configuration
+semgrep_config_paths:
+  - rules/custom_rules.yaml
+  # - p/security-audit   # uncomment to also pull semgrep registry packs (needs network)
+
+exemplars_path: src/slm_avr/retrieval/exemplars/cwe_fixes.json
+
+max_iterations: 3
+top_k_exemplars: 3
+
+llm_provider: ollama   # ollama | mock
+
+ollama:
+  host: http://localhost:11434
+  # Any locally-pulled Ollama model works here. qwen2.5-coder:3b is fully
+  # on-premise, free, and fits modest hardware (~2GB) -- matching the paper's
+  # zero-API-cost, data-sovereign deployment mode. Swap for qwen2.5-coder:7b
+  # or deepseek-coder:6.7b on stronger hardware for better patch quality.
+  model: qwen2.5-coder:3b
+  temperature: 0.2
+  timeout: 180
